@@ -1,9 +1,14 @@
-FROM golang:1.25.1
+FROM golang:1.21-alpine
 
 WORKDIR /app
 
-COPY text.go .
+# Копируем исходный код
+COPY . .
 
-RUN go build -o app text.go
+# Скачиваем зависимости и собираем приложение
+RUN go mod init app && \
+    go get -u gorm.io/gorm gorm.io/driver/postgres && \
+    go build -o app .
 
-CMD ["./app"]
+# Ждем пока PostgreSQL запустится и запускаем приложение
+CMD sleep 10 && ./app
