@@ -1,92 +1,98 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"time"
 
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
+	"github.com/redis/go-redis/v9"
 )
 
-// Модель для БД
-type Result struct {
-	ID        uint   `gorm:"primaryKey"`
-	Task      string // "sheep", "incrementer", "sort"
-	Input     string 
-	Output    string
-	CreatedAt time.Time
-}
-
-var db *gorm.DB
+var ctx = context.Background()
+var rdb *redis.Client
 
 func main() {
-	// Подключаемся к БД
-	dsn := "host=localhost user=postgres password=postgres dbname=test port=5432 sslmode=disable"
-	var err error
-	db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
-	if err != nil {
-		fmt.Println("error")
-	} else {
-		db.AutoMigrate(&Result{})
-		fmt.Println("OK!")
+	// Подключаемся к Redis
+	rdb = redis.NewClient(&redis.Options{
+		Addr: "localhost:6379",
+	})
+	defer rdb.Close()
+
+	// Проверяем подключение
+	if err := rdb.Ping(ctx).Err(); err != nil {
+		fmt.Println("Ошибка Redis:", err)
+		return
 	}
 
-	// 1. Подсчет овец
-	sheeps := []bool{true, false, false, false, true, true, false, true, true, false}
-	fmt.Println("овцы тут->", sheeps)
-	counter := countSheeps(sheeps)
-	fmt.Println("Количество овец:", counter)
-	saveResult("sheep", fmt.Sprintf("%v", sheeps), fmt.Sprintf("%d", counter))
+	// Тестируем функции
+	sheeps := []bool{true, false, false, true}
+	countSheeps(sheeps)
 
-	// 2. Увеличение массива
 	nums := []int{4, 7, 9}
-	fmt.Println("массив до преобразований->", nums)
-	result := incrementer(nums)
-	fmt.Println("результат->", result)
-	fmt.Println("оригинальный массив после->", nums)
-	saveResult("incrementer", fmt.Sprintf("%v", nums), fmt.Sprintf("%v", result))
+	incrementer(nums)
 
-	// 3. Сортировка массива
 	array := []int{12, 54, 11, 17, 1, 0, 3, 7, 4}
-	fmt.Println("массив до тудасюда->", array)
-	sorted := sortArray(array)
-	fmt.Println("массив после тудасюда", sorted)
-	saveResult("sort", fmt.Sprintf("%v", array), fmt.Sprintf("%v", sorted))
-}
-
-func saveResult(task, input, output string) {
-	if db != nil {
-		db.Create(&Result{
-			Task:      task,
-			Input:     input,
-			Output:    output,
-			CreatedAt: time.Now(),
-		})
-	}
-}
-
-// Ваши оригинальные функции
-func incrementer(nums []int) []int {
-	result := make([]int, len(nums))
-	for i, value := range nums {
-		sum := value + (i + 1)
-		result[i] = sum % 10
-	}
-	return result
+	sortArray(array)
 }
 
 func countSheeps(sheeps []bool) int {
+	// Новый формат ключа: task1_метка_времени
+	timestamp := time.Now().Unix()
+	key := fmt.Sprintf("task1_%d", timestamp)
+	
+	// Пробуем взять из Redis
+	if count, err := rdb.Get(ctx, key).Int(); err == nil {
+		return count
+	}
+	// Вычисляем если нет в кэше
 	counter := 0
 	for _, value := range sheeps {
 		if value {
 			counter++
 		}
 	}
+	// Сохраняем в Redis
+	rdb.Set(ctx, key, counter, time.Hour)
 	return counter
 }
 
+func incrementer(nums []int) []int {
+	// Новый формат ключа: task2_метка_времени
+	timestamp := time.Now().Unix()
+	key := fmt.Sprintf("task2_%d", timestamp)
+	
+	// Пробуем взять из Redis
+	if result, err := rdb.Get(ctx, key).Bytes(); err == nil {
+		var data []int
+		json.Unmarshal(result, &data)
+		return data
+	}
+	// Вычисляем если нет в кэше
+	result := make([]int, len(nums))
+	for i, value := range nums {
+		sum := value + (i + 1)
+		result[i] = sum % 10
+	}
+	// Сохраняем в Redis
+	jsonData, _ := json.Marshal(result)
+	rdb.Set(ctx, key, jsonData, time.Hour)
+	return result
+}
+
 func sortArray(array []int) []int {
+	// Новый формат ключа: task3_метка_времени
+	timestamp := time.Now().Unix()
+	key := fmt.Sprintf("task3_%d", timestamp)
+	
+	// Пробуем взять из Redis
+	if result, err := rdb.Get(ctx, key).Bytes(); err == nil {
+		var data []int
+		json.Unmarshal(result, &data)
+		return data
+	}
+	// Вычисляем если нет в кэше
 	newArray := []int{}
 	for _, value := range array {
 		if value%2 != 0 {
@@ -101,5 +107,8 @@ func sortArray(array []int) []int {
 			obratka++
 		}
 	}
+	// Сохраняем в Redis
+	jsonData, _ := json.Marshal(array)
+	rdb.Set(ctx, key, jsonData, time.Hour)
 	return array
 }
