@@ -1,14 +1,12 @@
-FROM golang:alpine
+FROM golang:1.21-alpine
 
 WORKDIR /app
- 
-COPY go.mod go.sum ./
-RUN go mod download
- 
-COPY *.go ./
 
- 
+# Устанавливаем переменные окружения для отключения модулей
+ENV GO111MODULE=off
+
+COPY main.go .
+
 RUN go build -o main .
 
- 
 CMD ["./main"]
