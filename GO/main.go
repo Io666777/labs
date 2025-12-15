@@ -1,111 +1,88 @@
 package main
 
-import "fmt"
-
-func Find[T any](slc []T, predicate func(T) bool) (T, bool) {
-	for _, value := range slc {
-		if predicate(value) {
-			return value, true
-		}
-	}
-	var znach T
-	return znach, false
-}
-
-func MultiPredicateFilter[T any](slc []T, predicates ...func(T) bool) []T {
-	var res []T
-
-	for _, val := range slc {
-		ok := true
-		for _, p := range predicates {
-			if !p(val) {
-				ok = false
-				break
-			}
-		}
-		if ok {
-			res = append(res, val)
-		}
-	}
-
-	return res
-}
-
-func GroupAndAggregate[T any, K comparable](data []T, key func(T) K, agg func([]T) float64) map[K]float64 {
-	m := make(map[K][]T)
-	for _, v := range data {
-		m[key(v)] = append(m[key(v)], v)
-	}
-
-	res := make(map[K]float64)
-	for k, v := range m {
-		res[k] = agg(v)
-	}
-	return res
-}
-
-type P struct {
-	Name string
-	Num  int
-}
+import (
+    "fmt"
+    "sync"
+    "time"
+)
 
 func main() {
-	var a int = 1
+    var choice int
+    fmt.Println("Выберите задание:")
+    fmt.Println("1 - Буферизированный vs небуферизированный канал")
+    fmt.Println("2 - Вычисление факториала через горутины")
+    fmt.Print("Ваш выбор: ")
+    fmt.Scan(&choice)
 
-	switch a {
-	case 1:
-		num := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
-		res, ok := Find(num, func(n int) bool {
-			return n > 5
-		})
-		if ok {
-			fmt.Println("yes", res)
-		} else {
-			fmt.Println("no")
-		}
-		frut := []string{"apple", "banana", "car", "lemon"}
-		frt, fok := Find(frut, func(s string) bool {
-			return len(s) > 0 && s[0] == 'a'
-		})
-		if fok {
-			fmt.Println("yes - a", frt)
-		} else {
-			fmt.Println("no")
-		}
+    switch choice {
+    case 1:
+        demoChannels()
+    case 2:
+        calcFactorial()
+    default:
+        fmt.Println("Неверный выбор")
+    }
+}
 
-	case 2:
-		pr := []P{
-			{"car", 1},
-			{"cat", 2},
-			{"dog", 3},
-		}
+func demoChannels() {
+    fmt.Println("\n=== Небуферизированный канал ===")
+    unbuffered := make(chan int)
 
-		chep := MultiPredicateFilter(pr,
-			func(p P) bool { return p.Num < 2 },
-			func(p P) bool { return p.Name[0] == 'd' },
-		)
+    go func() {
+        fmt.Println("Горутина: отправка 1...")
+        unbuffered <- 1
+        fmt.Println("Горутина: отправка завершена")
+    }()
 
-		fmt.Println("res - ", chep)
+    time.Sleep(2 * time.Second)
+    fmt.Println("Основная программа: получение...")
+    fmt.Println("Получено:", <-unbuffered)
+    time.Sleep(500 * time.Millisecond)
 
-	case 3:
-		pr := []P{
-			{"dada", 2},
-			{"hehe", 3},
-			{"dada", 5},
-			{"hehe", 10},
-		}
+    fmt.Println("\n=== Буферизированный канал ===")
+    buffered := make(chan int, 2)
 
-		res := GroupAndAggregate(
-			pr,
-			func(p P) string { return p.Name },
-			func(lines []P) float64 {
-				sum := 0
-				for _, s := range lines {
-					sum += s.Num
-				}
-				return float64(sum)
-			},
-		)
-		fmt.Println(res)
-	}
+    buffered <- 10
+    buffered <- 20
+    fmt.Println("Отправлено 10 и 20 без блокировки")
+
+    fmt.Println("Получено:", <-buffered)
+    fmt.Println("Получено:", <-buffered)
+}
+
+func calcFactorial() {
+    n := 10
+    parts := 3
+    results := make(chan int, parts)
+
+    var wg sync.WaitGroup
+
+    for i := 0; i < parts; i++ {
+        wg.Add(1)
+        start := i*n/parts + 1
+        end := (i + 1) * n / parts
+        if i == parts-1 {
+            end = n
+        }
+
+        go func(s, e int) {
+            defer wg.Done()
+            product := 1
+            for j := s; j <= e; j++ {
+                product *= j
+            }
+            fmt.Printf("Горутина %d-%d: %d\n", s, e, product)
+            results <- product
+        }(start, end)
+    }
+
+    wg.Wait()
+    close(results)
+
+    final := 1
+    for res := range results {
+        final *= res
+    }
+
+    fmt.Printf("\nФакториал %d = %d\n", n, final)
 }
